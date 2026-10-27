@@ -80,6 +80,37 @@ final class MessengerDependencyInjectionTest extends AbstractExtensionTestCase
         $this->assertContainerBuilderHasServiceDefinitionWithTag(self::REMOVE_HANDLER, 'messenger.message_handler', ['handles' => RemoveDocumentsMessage::class, 'bus' => 'app.custom_bus']);
     }
 
+    public function testMessengerEnabledOnlyListensToConfiguredDoctrineEvents(): void
+    {
+        $this->enableDoctrine();
+        $this->load([
+            'url' => 'http://meilisearch:7700',
+            'api_key' => null,
+            'doctrineSubscribedEvents' => ['postPersist'],
+            'messenger' => ['enabled' => true],
+        ]);
+
+        $tags = $this->container->getDefinition(self::ASYNC_SUBSCRIBER)->getTag('doctrine.event_listener');
+
+        $this->assertSame([['event' => 'postPersist'], ['event' => 'postFlush']], $tags);
+    }
+
+    public function testMessengerEnabledWithoutDoctrineEventsOnlyRegistersHandlers(): void
+    {
+        $this->enableDoctrine();
+        $this->load([
+            'url' => 'http://meilisearch:7700',
+            'api_key' => null,
+            'doctrineSubscribedEvents' => [],
+            'messenger' => ['enabled' => true],
+        ]);
+
+        $this->assertContainerBuilderNotHasService(self::SYNC_SUBSCRIBER);
+        $this->assertContainerBuilderNotHasService(self::ASYNC_SUBSCRIBER);
+        $this->assertContainerBuilderHasServiceDefinitionWithTag(self::INDEX_HANDLER, 'messenger.message_handler', ['handles' => IndexSearchablesMessage::class]);
+        $this->assertContainerBuilderHasServiceDefinitionWithTag(self::REMOVE_HANDLER, 'messenger.message_handler', ['handles' => RemoveDocumentsMessage::class]);
+    }
+
     public function testMessengerEnabledWithoutDoctrineOnlyRegistersHandlers(): void
     {
         $this->container->setParameter('kernel.bundles', []);

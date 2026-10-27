@@ -94,7 +94,8 @@ final class MeilisearchExtension extends Extension
 
     /**
      * Registers the Messenger handlers and, when Doctrine is available, the asynchronous
-     * Doctrine subscriber dispatching their messages.
+     * Doctrine subscriber dispatching their messages. Like the synchronous subscriber,
+     * it only listens to the configured `doctrineSubscribedEvents`.
      *
      * @param array<mixed> $config
      */
@@ -104,11 +105,14 @@ final class MeilisearchExtension extends Extension
 
         $bus = $config['messenger']['bus'];
 
-        if ($doctrineEnabled) {
+        $doctrineEvents = $config['doctrineSubscribedEvents'];
+
+        if ($doctrineEnabled && [] !== $doctrineEvents) {
             $subscriber = $container->getDefinition('meilisearch.async_search_indexer_subscriber');
             $subscriber->replaceArgument(1, new Reference($bus ?? 'messenger.default_bus'));
 
-            foreach (['postPersist', 'postUpdate', 'preRemove', 'postFlush'] as $event) {
+            // The buffered changes are dispatched once the flush succeeds.
+            foreach ([...$doctrineEvents, 'postFlush'] as $event) {
                 $subscriber->addTag('doctrine.event_listener', ['event' => $event]);
                 $subscriber->addTag('doctrine_mongodb.odm.event_listener', ['event' => $event]);
             }

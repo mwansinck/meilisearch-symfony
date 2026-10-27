@@ -86,8 +86,8 @@ meilisearch:
         # bus: messenger.bus.default # optional: a specific bus service id
 ```
 
-When enabled, the bundle's synchronous Doctrine subscriber is replaced by an asynchronous one. During
-each `flush()` it buffers the changes and, once the flush succeeds, dispatches at most two messages:
+When enabled, the bundle's synchronous Doctrine subscriber is replaced by an asynchronous one, listening
+to the same `doctrineSubscribedEvents`. During each `flush()` it buffers the changes and, once the flush succeeds, dispatches at most two messages:
 
 - `Meilisearch\Bundle\Messenger\IndexSearchablesMessage` — objects to (re)index. The handler reloads the
   live entities through the data provider of their index before normalizing them, so
