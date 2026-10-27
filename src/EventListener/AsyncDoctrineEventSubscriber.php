@@ -11,6 +11,7 @@ use Meilisearch\Bundle\Messenger\RemoveDocumentsMessage;
 use Meilisearch\Bundle\Model\Aggregator;
 use Meilisearch\Bundle\SearchManagerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Asynchronous replacement for {@see DoctrineEventSubscriber}.
@@ -24,9 +25,13 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * Removals resolve their document ids while the entity is still alive and delete by
  * id, so the handler never reloads a deleted entity (see #62).
  *
+ * The buffers are cleared when the object manager is cleared and when the service
+ * is reset, so changes of a failed flush are never dispatched by a later flush in a
+ * long-running process.
+ *
  * @internal
  */
-final class AsyncDoctrineEventSubscriber
+final class AsyncDoctrineEventSubscriber implements ResetInterface
 {
     /**
      * Searchable entity ids to (re)index, deduplicated per index name and class.
@@ -66,6 +71,18 @@ final class AsyncDoctrineEventSubscriber
         foreach ($this->resolveDocumentIds($args) as $indexName => $documentId) {
             $this->documentsToRemove[$indexName][(string) $documentId] = $documentId;
         }
+    }
+
+    public function onClear(): void
+    {
+        // Pending changes of a cleared object manager will never be flushed.
+        $this->reset();
+    }
+
+    public function reset(): void
+    {
+        $this->entitiesToIndex = [];
+        $this->documentsToRemove = [];
     }
 
     public function postFlush(): void

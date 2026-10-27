@@ -17,7 +17,8 @@ return static function (ContainerConfigurator $container) {
             service('meilisearch.manager'),
             abstract_arg('message bus defined in MeilisearchExtension'),
             service('meilisearch.data_provider.registry'),
-        ]);
+        ])
+        ->tag('kernel.reset', ['method' => 'reset']);
 
     $services->set('meilisearch.messenger.index_searchables_handler', IndexSearchablesMessageHandler::class)
         ->args([

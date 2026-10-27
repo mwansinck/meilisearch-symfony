@@ -85,6 +85,33 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         ], $dispatched);
     }
 
+    /**
+     * The removal is buffered on remove(), but the flush fails (e.g. on a foreign key
+     * constraint): a later flush in the same process must not dispatch it.
+     */
+    public function testResetDropsChangesOfAFailedFlush(): void
+    {
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+
+        $subscriber = $this->createSubscriber($bus);
+        $subscriber->postPersist($this->createEventArgs(new Post('Indexed post')));
+        $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
+        $subscriber->reset();
+        $subscriber->postFlush();
+    }
+
+    public function testClearingTheObjectManagerDropsPendingChanges(): void
+    {
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+
+        $subscriber = $this->createSubscriber($bus);
+        $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
+        $subscriber->onClear();
+        $subscriber->postFlush();
+    }
+
     public function testEntityWithoutIndexIsIgnored(): void
     {
         $bus = $this->createMock(MessageBusInterface::class);

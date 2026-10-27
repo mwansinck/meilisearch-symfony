@@ -48,7 +48,7 @@ final class MessengerDependencyInjectionTest extends AbstractExtensionTestCase
         $this->assertContainerBuilderNotHasService(self::SYNC_SUBSCRIBER);
         $this->assertContainerBuilderHasService(self::ASYNC_SUBSCRIBER);
 
-        foreach (['postPersist', 'postUpdate', 'preRemove', 'postFlush'] as $event) {
+        foreach (['postPersist', 'postUpdate', 'preRemove', 'postFlush', 'onClear'] as $event) {
             $this->assertContainerBuilderHasServiceDefinitionWithTag(self::ASYNC_SUBSCRIBER, 'doctrine.event_listener', ['event' => $event]);
             $this->assertContainerBuilderHasServiceDefinitionWithTag(self::ASYNC_SUBSCRIBER, 'doctrine_mongodb.odm.event_listener', ['event' => $event]);
         }
@@ -61,6 +61,9 @@ final class MessengerDependencyInjectionTest extends AbstractExtensionTestCase
 
         // Document ids are resolved through the data providers.
         $this->assertContainerBuilderHasServiceDefinitionWithArgument(self::ASYNC_SUBSCRIBER, 2, new Reference('meilisearch.data_provider.registry'));
+
+        // The buffers are cleared between requests and messages.
+        $this->assertContainerBuilderHasServiceDefinitionWithTag(self::ASYNC_SUBSCRIBER, 'kernel.reset', ['method' => 'reset']);
 
         // Default bus is referenced when none is configured.
         $this->assertContainerBuilderHasServiceDefinitionWithArgument(self::ASYNC_SUBSCRIBER, 1, new Reference('messenger.default_bus'));
@@ -92,7 +95,7 @@ final class MessengerDependencyInjectionTest extends AbstractExtensionTestCase
 
         $tags = $this->container->getDefinition(self::ASYNC_SUBSCRIBER)->getTag('doctrine.event_listener');
 
-        $this->assertSame([['event' => 'postPersist'], ['event' => 'postFlush']], $tags);
+        $this->assertSame([['event' => 'postPersist'], ['event' => 'postFlush'], ['event' => 'onClear']], $tags);
     }
 
     public function testMessengerEnabledWithoutDoctrineEventsOnlyRegistersHandlers(): void
