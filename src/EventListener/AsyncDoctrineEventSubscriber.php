@@ -36,7 +36,7 @@ final class AsyncDoctrineEventSubscriber
     private array $entitiesToIndex = [];
 
     /**
-     * Document ids to delete, deduplicated per prefixed index uid.
+     * Document ids to delete, deduplicated per index name.
      *
      * @var array<non-empty-string, array<array-key, int|string>>
      */
@@ -63,10 +63,8 @@ final class AsyncDoctrineEventSubscriber
     {
         // Resolve the document ids now, before the entity is gone from the database.
         // The async handler deletes by id and never reloads the entity.
-        $prefix = $this->searchManager->getConfiguration()->get('prefix');
-
         foreach ($this->resolveDocumentIds($args) as $indexName => $documentId) {
-            $this->documentsToRemove[$prefix.$indexName][(string) $documentId] = $documentId;
+            $this->documentsToRemove[$indexName][(string) $documentId] = $documentId;
         }
     }
 

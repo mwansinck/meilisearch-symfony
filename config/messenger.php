@@ -28,6 +28,7 @@ return static function (ContainerConfigurator $container) {
 
     $services->set('meilisearch.messenger.remove_documents_handler', RemoveDocumentsMessageHandler::class)
         ->args([
+            service('meilisearch.manager'),
             service('meilisearch.engine'),
         ])
         ->tag('messenger.message_handler', ['handles' => RemoveDocumentsMessage::class]);

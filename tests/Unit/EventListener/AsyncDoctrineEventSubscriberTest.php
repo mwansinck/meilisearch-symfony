@@ -44,7 +44,7 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         $bus = $this->createMock(MessageBusInterface::class);
         $bus->expects($this->once())
             ->method('dispatch')
-            ->with(new RemoveDocumentsMessage(['sf_aggregated' => [12]]))
+            ->with(new RemoveDocumentsMessage(['aggregated' => [12]]))
             ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
 
         $subscriber = $this->createSubscriber($bus);
@@ -81,7 +81,7 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
 
         $this->assertEquals([
             new IndexSearchablesMessage(['aggregated' => [Post::class => [12]]]),
-            new RemoveDocumentsMessage(['sf_aggregated' => [12]]),
+            new RemoveDocumentsMessage(['aggregated' => [12]]),
         ], $dispatched);
     }
 
