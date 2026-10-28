@@ -71,11 +71,15 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         $subscriber->postPersist($this->createEventArgs(new Post('Indexed post')));
         $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
 
+        $thrown = false;
+
         try {
             $subscriber->postFlush();
-            $this->fail('The failing dispatch should not be swallowed.');
         } catch (\RuntimeException) {
+            $thrown = true;
         }
+
+        $this->assertTrue($thrown, 'The failing dispatch should not be swallowed.');
 
         $subscriber->postFlush();
 
