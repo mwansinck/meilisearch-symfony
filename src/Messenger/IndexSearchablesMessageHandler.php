@@ -15,6 +15,9 @@ use Meilisearch\Bundle\SearchManagerInterface;
  * works for any source (Doctrine ORM or a custom data provider) and any identifier
  * shape the provider supports. Identifiers that no longer resolve to an object are
  * silently skipped (e.g. deleted again before the message was consumed).
+ *
+ * Identifiers are loaded in chunks of the configured batch size, which keeps each
+ * query within the bind-parameter limits of the database.
  */
 final class IndexSearchablesMessageHandler
 {
@@ -26,20 +29,26 @@ final class IndexSearchablesMessageHandler
 
     public function __invoke(IndexSearchablesMessage $message): void
     {
+        $batchSize = $this->searchManager->getConfiguration()->get('batchSize');
+
         foreach ($message->getIdentifiersByIndex() as $indexName => $identifiersByClass) {
             foreach ($identifiersByClass as $class => $identifiers) {
                 if ([] === $identifiers) {
                     continue;
                 }
 
-                $objects = $this->dataProviderRegistry->getDataProvider($indexName, $class)->loadByIdentifiers($identifiers);
-                $objects = \is_array($objects) ? array_values($objects) : iterator_to_array($objects, false);
+                $dataProvider = $this->dataProviderRegistry->getDataProvider($indexName, $class);
 
-                if ([] === $objects) {
-                    continue;
+                foreach (array_chunk($identifiers, $batchSize) as $chunk) {
+                    $objects = $dataProvider->loadByIdentifiers($chunk);
+                    $objects = \is_array($objects) ? array_values($objects) : iterator_to_array($objects, false);
+
+                    if ([] === $objects) {
+                        continue;
+                    }
+
+                    $this->searchManager->index($objects);
                 }
-
-                $this->searchManager->index($objects);
             }
         }
     }
