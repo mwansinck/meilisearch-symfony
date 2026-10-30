@@ -94,12 +94,15 @@ final class AsyncDoctrineEventSubscriber implements ResetInterface
         $this->entitiesToIndex = [];
         $this->documentsToRemove = [];
 
-        if ([] !== $entitiesToIndex) {
-            $this->bus->dispatch(new IndexSearchablesMessage(array_map($this->toLists(...), $entitiesToIndex)));
-        }
-
-        if ([] !== $documentsToRemove) {
-            $this->bus->dispatch(new RemoveDocumentsMessage($this->toLists($documentsToRemove)));
+        try {
+            if ([] !== $entitiesToIndex) {
+                $this->bus->dispatch(new IndexSearchablesMessage(array_map($this->toLists(...), $entitiesToIndex)));
+            }
+        } finally {
+            // The flush already succeeded: a failing index dispatch must not lose the removals.
+            if ([] !== $documentsToRemove) {
+                $this->bus->dispatch(new RemoveDocumentsMessage($this->toLists($documentsToRemove)));
+            }
         }
     }
 

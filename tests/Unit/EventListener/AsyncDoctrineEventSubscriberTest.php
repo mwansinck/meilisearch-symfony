@@ -89,6 +89,43 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         ], $dispatched);
     }
 
+    public function testFailingIndexDispatchStillDispatchesTheRemovals(): void
+    {
+        $dispatched = [];
+
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->method('dispatch')->willReturnCallback(static function (object $message) use (&$dispatched): Envelope {
+            $dispatched[] = $message;
+
+            if ($message instanceof IndexSearchablesMessage) {
+                throw new \RuntimeException('Message cannot be sent');
+            }
+
+            return new Envelope($message);
+        });
+
+        $subscriber = $this->createSubscriber($bus);
+        $subscriber->postPersist($this->createEventArgs(new Post('Indexed post')));
+        $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
+
+        $thrown = false;
+
+        try {
+            $subscriber->postFlush();
+        } catch (\RuntimeException) {
+            $thrown = true;
+        }
+
+        $this->assertTrue($thrown, 'The failing dispatch should not be swallowed.');
+
+        $subscriber->postFlush();
+
+        $this->assertEquals([
+            new IndexSearchablesMessage(['aggregated' => [Post::class => [12]]]),
+            new RemoveDocumentsMessage(['aggregated' => [12]]),
+        ], $dispatched);
+    }
+
     /**
      * The removal is buffered on remove(), but the flush fails (e.g. on a foreign key
      * constraint): a later flush in the same process must not dispatch it.
