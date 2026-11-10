@@ -39,11 +39,12 @@ final class AsyncDoctrineEventSubscriber implements ResetInterface
     /**
      * Pending changes per object manager: searchable entity ids to (re)index,
      * deduplicated per index name and class, and document ids to delete,
-     * deduplicated per index name.
+     * deduplicated per class and index name. Both are kept per class, so a partial
+     * clear of the object manager only drops the changes of the cleared classes.
      *
      * @var \WeakMap<ObjectManager, array{
      *     index: array<non-empty-string, array<class-string, array<array-key, int|string>>>,
-     *     remove: array<non-empty-string, array<array-key, int|string>>,
+     *     remove: array<class-string, array<non-empty-string, array<array-key, int|string>>>,
      * }>
      */
     private \WeakMap $pending;
@@ -76,11 +77,12 @@ final class AsyncDoctrineEventSubscriber implements ResetInterface
             return;
         }
 
+        $class = $this->resolveClass($args);
         $manager = $args->getObjectManager();
         $pending = $this->pending[$manager] ?? ['index' => [], 'remove' => []];
 
         foreach ($documentIds as $indexName => $documentId) {
-            $pending['remove'][$indexName][(string) $documentId] = $documentId;
+            $pending['remove'][$class][$indexName][(string) $documentId] = $documentId;
         }
 
         $this->pending[$manager] = $pending;
@@ -88,8 +90,44 @@ final class AsyncDoctrineEventSubscriber implements ResetInterface
 
     public function onClear(EventArgs $args): void
     {
-        // Pending changes of a cleared object manager will never be flushed.
-        unset($this->pending[self::getObjectManager($args)]);
+        // Pending changes of cleared entities will never be flushed.
+        $manager = self::getObjectManager($args);
+
+        // doctrine/orm < 3 and doctrine/mongodb-odm can clear the entities of a single
+        // class only; the changes of other classes must then be kept.
+        $clearedClass = method_exists($args, 'getEntityClass') ? $args->getEntityClass() : null;
+
+        if (null === $clearedClass) {
+            unset($this->pending[$manager]);
+
+            return;
+        }
+
+        if (!isset($this->pending[$manager])) {
+            return;
+        }
+
+        $pending = $this->pending[$manager];
+
+        foreach ($pending['index'] as $indexName => $identifiersByClass) {
+            foreach (array_keys($identifiersByClass) as $class) {
+                if (is_a($class, $clearedClass, true)) {
+                    unset($pending['index'][$indexName][$class]);
+                }
+            }
+
+            if ([] === $pending['index'][$indexName]) {
+                unset($pending['index'][$indexName]);
+            }
+        }
+
+        foreach (array_keys($pending['remove']) as $class) {
+            if (is_a($class, $clearedClass, true)) {
+                unset($pending['remove'][$class]);
+            }
+        }
+
+        $this->pending[$manager] = $pending;
     }
 
     public function reset(): void
@@ -111,7 +149,13 @@ final class AsyncDoctrineEventSubscriber implements ResetInterface
         }
 
         $entitiesToIndex = $pending['index'];
-        $documentsToRemove = $pending['remove'];
+        $documentsToRemove = [];
+
+        foreach ($pending['remove'] as $documentIdsByIndex) {
+            foreach ($documentIdsByIndex as $indexName => $documentIds) {
+                $documentsToRemove[$indexName] = ($documentsToRemove[$indexName] ?? []) + $documentIds;
+            }
+        }
 
         try {
             if ([] !== $entitiesToIndex) {

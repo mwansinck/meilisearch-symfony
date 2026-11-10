@@ -196,6 +196,35 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         ], $dispatched);
     }
 
+    /**
+     * doctrine/orm < 3 can clear the entities of a single class: the pending changes
+     * of other classes must be kept, those of the cleared class dropped.
+     */
+    public function testPartialClearOnlyDropsThePendingChangesOfTheClearedClass(): void
+    {
+        $dispatched = [];
+
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->method('dispatch')->willReturnCallback(static function (object $message) use (&$dispatched): Envelope {
+            $dispatched[] = $message;
+
+            return new Envelope($message);
+        });
+
+        $subscriber = $this->createSubscriber($bus);
+        $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
+        $subscriber->onClear($this->createPartialClearEventArgs(Comment::class));
+        $subscriber->postFlush(new ManagerEventArgs($this->objectManager));
+
+        $this->assertEquals([new RemoveDocumentsMessage(['aggregated' => [12]])], $dispatched);
+
+        $subscriber->preRemove($this->createEventArgs(new Post('Removed post')));
+        $subscriber->onClear($this->createPartialClearEventArgs(Post::class));
+        $subscriber->postFlush(new ManagerEventArgs($this->objectManager));
+
+        $this->assertCount(1, $dispatched);
+    }
+
     public function testEntityWithoutIndexIsIgnored(): void
     {
         $bus = $this->createMock(MessageBusInterface::class);
@@ -238,6 +267,29 @@ final class AsyncDoctrineEventSubscriberTest extends TestCase
         });
 
         return $objectManager;
+    }
+
+    /**
+     * The onClear event of doctrine/orm < 3 when only the entities of one class are cleared.
+     *
+     * @param class-string $entityClass
+     */
+    private function createPartialClearEventArgs(string $entityClass): OnClearEventArgs
+    {
+        return new class($this->objectManager, $entityClass) extends OnClearEventArgs {
+            /**
+             * @param class-string $entityClass
+             */
+            public function __construct(ObjectManager $objectManager, private readonly string $entityClass)
+            {
+                parent::__construct($objectManager);
+            }
+
+            public function getEntityClass(): string
+            {
+                return $this->entityClass;
+            }
+        };
     }
 
     private function createEventArgs(object $entity, ?ObjectManager $objectManager = null): LifecycleEventArgs
