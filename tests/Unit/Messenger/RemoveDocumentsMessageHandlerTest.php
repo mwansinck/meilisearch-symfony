@@ -10,28 +10,38 @@ use Meilisearch\Bundle\Messenger\RemoveDocumentsMessage;
 use Meilisearch\Bundle\Messenger\RemoveDocumentsMessageHandler;
 use Meilisearch\Bundle\SearchManagerInterface;
 use Meilisearch\Client;
-use Meilisearch\Contracts\Task;
-use Meilisearch\Endpoints\Indexes;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Psr18Client;
+use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class RemoveDocumentsMessageHandlerTest extends TestCase
 {
     public function testDocumentsAreRemovedFromTheIndexWithTheConfiguredPrefix(): void
     {
-        $index = $this->createMock(Indexes::class);
-        $index->expects($this->once())
-            ->method('deleteDocuments')
-            ->with([1, 2])
-            ->willReturn(Task::fromArray(['taskUid' => 1, 'indexUid' => 'sf_posts', 'status' => 'enqueued', 'type' => 'documentDeletion', 'enqueuedAt' => '2026-01-01T00:00:00Z']));
+        $requests = [];
 
-        $client = $this->createMock(Client::class);
-        $client->expects($this->once())->method('index')->with('sf_posts')->willReturn($index);
+        $httpClient = new MockHttpClient(static function (string $method, string $url, array $options) use (&$requests): MockResponse {
+            $requests[] = [$method, parse_url($url, \PHP_URL_PATH), json_decode($options['body'], true)];
+
+            return new MockResponse(json_encode([
+                'taskUid' => 1,
+                'indexUid' => 'sf_posts',
+                'status' => 'enqueued',
+                'type' => 'documentDeletion',
+                'enqueuedAt' => '2026-01-01T00:00:00Z',
+            ]), ['http_code' => 202, 'response_headers' => ['content-type' => 'application/json']]);
+        });
 
         $searchManager = $this->createStub(SearchManagerInterface::class);
         $searchManager->method('getConfiguration')->willReturn(new Collection(['prefix' => 'sf_']));
 
-        (new RemoveDocumentsMessageHandler($searchManager, new Engine($client)))(
+        $engine = new Engine(new Client('http://meilisearch.test', 'masterKey', new Psr18Client($httpClient)));
+
+        (new RemoveDocumentsMessageHandler($searchManager, $engine))(
             new RemoveDocumentsMessage(['posts' => [1, 2], 'comments' => []])
         );
+
+        $this->assertSame([['POST', '/indexes/sf_posts/documents/delete-batch', [1, 2]]], $requests);
     }
 }
